@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+>Note to self:
+Markdown doesn't show the Python code in preview, only shows the output of the Python code.
+Might be more sensible to just use a normal R script for the demo
+
+
+
+# Reticulate: Unifying R and Python
+
+[Stuff here about not having to choose between R and Python]
+
+## 0. Environment set-up
+
+First, let's load reticulate and set up our Conda environment. Running ```use_condaenv``` will activate the specified environment, which may first need to be created either using ```conda_create``` or your Conda management tool of choice. Note that Reticulate installs its own Miniconda instance, so beware of this if managing Conda environments from outside of R!
+
+To learn more about Conda environments, please see [this link](https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/environments.html).
+
+
+```{r}
+# R
+library(reticulate)
+
+env_name <- "sklearn_demo"
+env_list <- conda_list()$name
+if (!env_name %in% env_list){
+  conda_create(envname=env_name, packages=c('python', 'scikit-learn', 'pandas'))
+}
+
+use_condaenv(env_name, required=TRUE)
+```
+
+## 1. Setting and accessing variables
+
+```{r}
+# R
+greeting <- "Hello world, from R"
+```
+
+R variables are accessed in Python through the ```r``` object's attributes.
+
+```{python}
+# Python
+greeting = "Hello world, from Python"
+
+print(r.greeting)
+```
+
+Similarly, we access our Python variables in R with the ```py``` object. 
+
+```{r}
+# R
+print(py$greeting)
+```
+
+We can set Python variables from within R:
+
+```{r}
+# R
+py$new_var <- 'This variable was set in R'
+```
+```{python}
+# Python
+print(new_var)
+```
+
+Or vice-versa:
+
+```{python}
+# Python
+r.new_var = 'This variable was set in Python'
+```
+```{r}
+# R
+print(new_var)
+```
+
+## 2. Data handling
+
+```{r}
+# R
+iris <- datasets::iris
+head(iris)
+```
+```{python}
+# Python
+
+import pandas
+```
+
+```{r}
+# R
+library(ggplot2)
+
+ggplot(data=iris, aes(x=Petal.Length, y=Petal.Width, color=Species)) + 
+  geom_point(aes(shape=Species), size=1.5) + xlab("Petal Length") + ylab("Petal Width") +   
+  geom_smooth(method="lm")
+```
+
+
+```{python}
+# Python
+from sklearn import svm
+
+r.iris
+```
+
+
