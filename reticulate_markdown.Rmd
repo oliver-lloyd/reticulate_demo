@@ -1,22 +1,14 @@
 ---
-title: "R Notebook"
+title: "Reticulate: Unifying R and Python"
 output:
   html_document:
     df_print: paged
 ---
->Note to self:
-Markdown doesn't show the Python code in preview, only shows the output of the Python code.
-Might be more sensible to just use a normal R script for the demo
 
-
-
-# Reticulate: Unifying R and Python
-
-[Stuff here about not having to choose between R and Python]
 
 ## 0. Environment set-up
 
-First, let's load reticulate and set up our Conda environment. Running ```use_condaenv``` will activate the specified environment, which may first need to be created either using ```conda_create``` or your Conda management tool of choice. Note that Reticulate installs its own Miniconda instance, so beware of this if managing Conda environments from outside of R!
+First, let's load reticulate and set up our Conda environment. Running ```use_condaenv``` will activate the specified environment, which may first need to be created either using ```conda_create``` or your Conda management tool of choice. Note that by default, Reticulate installs and uses its own Miniconda instance, so beware of this if managing Conda environments from outside of R!
 
 To learn more about Conda environments, please see [this link](https://docs.conda.io/projects/conda/en/latest/user-guide/concepts/environments.html).
 
@@ -27,8 +19,8 @@ library(reticulate)
 
 env_name <- "sklearn_demo"
 env_list <- conda_list()$name
-if (!env_name %in% env_list){
-  conda_create(envname=env_name, packages=c('python', 'scikit-learn', 'pandas'))
+if (! env_name %in% env_list){
+  conda_create(envname=env_name, packages=c('python', 'scikit-learn', 'pandas', 'matplotlib'))
 }
 
 use_condaenv(env_name, required=TRUE)
@@ -50,7 +42,7 @@ greeting = "Hello world, from Python"
 print(r.greeting)
 ```
 
-Similarly, we access our Python variables in R with the ```py``` object. 
+Similarly, we access our Python variables in R through the ```py``` object. 
 
 ```{r}
 # R
@@ -63,50 +55,133 @@ We can set Python variables from within R:
 # R
 py$new_var <- 'This variable was set in R'
 ```
+
 ```{python}
 # Python
 print(new_var)
 ```
 
-Or vice-versa:
+And vice-versa:
 
 ```{python}
 # Python
 r.new_var = 'This variable was set in Python'
 ```
+
 ```{r}
 # R
 print(new_var)
 ```
+Variables can be edited from the other language in the same way.
+
+You can also get recursive with calls back and forth between the languages:
+
+```{r}
+# R
+print(py$r$py$r$py$r$py$r$greeting)
+```
+but don't do that.
 
 ## 2. Data handling
 
+We'll be working with the Iris dataset here, so let's load it into R.
 ```{r}
 # R
 iris <- datasets::iris
 head(iris)
 ```
+
+With Pandas installed in our Conda environment, Reticulate will automatically convert R dataframes into a ```pd.DataFrame``` object:
 ```{python}
 # Python
-
-import pandas
+type(r.iris)
+r.iris.head()
 ```
+
+In a Pandas-less environment R dataframes will be converted to Python dictionaries, with column names as keys that correspond to lists of the relevant values. Calling ```.to_dict(orient='list')``` on a Pandas dataframe will produce an equivalent dictionary.
+
+## 3. Hyperparameter optimisation with Scikit-learn
+
+We will now be training a model, a support vector machine (SVM), to predict the species of a flower given its measurements. An SVM is a linear classifier: for n-dimensional data, a hyperplane(s) is positioned to maximise the absolute Euclidian distance between itself and the points of the two (or more) target classes. 
+
+While this might sound complex, the basic idea is actually quite simple- let's plot 2 dimensions of our data to get an idea for how this works. 
 
 ```{r}
 # R
-library(ggplot2)
+suppressMessages(library(tidyverse))
 
 ggplot(data=iris, aes(x=Petal.Length, y=Petal.Width, color=Species)) + 
-  geom_point(aes(shape=Species), size=1.5) + xlab("Petal Length") + ylab("Petal Width") +   
-  geom_smooth(method="lm")
+  geom_point(aes(shape=Species), size=1.5) + xlab("Petal Length") + ylab("Petal Width") 
 ```
+
+The above plot displays the petal.length and petal.width dimensions of our dataset, with points coloured by a categorical attribute- species. For the sake of example, let's imagine we want to fit an SVM to this 2 dimensional data to classify setosa vs non-setosa flowers. Without actually crunching the numbers, we just need to decide a single straight line that would separate those two groups on the graph. Here, it seems likely that our SVM would cross the x-axis at around x=3 or x=4, and the y-axis at around y=1.5. If we drew this on the graph, we could then predict the classification of a new, unseen data point based simply on which side of our line it lays.
+
+Now that we have a basic understanding of the model, let's fit one and determine a set of optimal parameters that maximise its predictive power. First, we will prepare our data- since this is a supervised task, the model requires both feature data, `X`, and a response/target variable, `y`. To verify the predictive power of our model we will hold back a random 20% of all cases to be predicted on after training. Fortunately, Scikit-learn has the handy `train_test_split()` function to help us with this.
 
 
 ```{python}
 # Python
-from sklearn import svm
+from sklearn.model_selection import train_test_split
 
-r.iris
+X = r.iris
+y = X.pop('Species')
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=111)
+
+print(X_train, '\n', y_train)
+```
+With our data ready to go, we can now initialise, fit, and test our model.
+```{python}
+# Python
+from sklearn import svm
+from sklearn.metrics import accuracy_score, plot_confusion_matrix
+import matplotlib.pyplot as plt
+
+classifier = svm.SVC()
+classifier.fit(X_train, y_train)
+
+y_pred = classifier.predict(X_test)
+accuracy = accuracy_score(y_test, y_pred)
+
+plot = plot_confusion_matrix(classifier, X_test, y_test)
+plt.title("Overall accuracy = %f" % round(accuracy, 3))
+plt.show()
 ```
 
+This is a pretty good result, but we can do better. Support vector machines have [a few parameters](https://scikit-learn.org/stable/modules/generated/sklearn.svm.SVC.html) that can be tweaked to change the way the model is fit, and thus will alter the resultant predictive power of the model. In our case we specified no parameters and so default values were used. 
 
+We will now use Scikit-learn's `GridSearchCV` function to find an optimum parameter configuration for predictive power given this dataset. To do so, we first intialise a blank model alongside dictionary of parameters to test accross- this should have keys named after specific parameters, and the corresponding values should be iterables containing values to test for that parameter. 
+
+We then initialise our GridSearch object by passing it our model and parameter dictionary. Following this, we fit the object by passing it our entire sets of feature and target data; with GridSearch there is no need to manually split our data into training and test sets. In fact, GridSearch does this for you multiple times per model instance. This reduces the likelihood of imbalanced train-test splits affecting our assessment of model quality.
+
+Finally, we can access the full set of results via the `.cv_results_` attribute of the GridSearch object, or simply get the best set of parameters through the `best_params_` attribute.
+```{python}
+# Python
+from sklearn.model_selection import GridSearchCV
+import pandas as pd
+
+svc = svm.SVC()
+parameters = {
+    'kernel':('linear', 'rbf'), 
+    'C': range(1, 10)
+}
+grid = GridSearchCV(svc, parameters)
+grid.fit(X, y)
+
+full_results = pd.DataFrame(grid.cv_results_)
+best_params = grid.best_params_
+best_score = grid.best_score_
+print("The model with C=%i and kernel=%s performed best, with a mean score of %f" % (best_params['C'], best_params['kernel'], best_score))
+```
+
+As one final exercise, let's hop back into R and create a bar plot showing the accuracy score against C and kernel type of our tested models.
+
+```{r}
+# R
+py$full_results$param_C <- as.numeric(py$full_results$param_C)
+
+py$full_results %>% 
+  ggplot(aes(fill=param_kernel, y=mean_test_score, x=param_C)) + 
+    geom_bar(position="dodge", stat="identity") + 
+    coord_cartesian(ylim = c(0.9, 1)) +
+    scale_x_continuous(breaks = seq(1, 10, 1))
+```
